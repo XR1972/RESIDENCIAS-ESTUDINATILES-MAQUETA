@@ -71,6 +71,7 @@ camera.panningSensibility = 1000;
     );
 
     light.intensity = 1.2;
+    light.groundColor = new BABYLON.Color3(0.55, 0.55, 0.55);
 
     // Cargar edificio
     const result = await BABYLON.SceneLoader.ImportMeshAsync(
@@ -155,7 +156,7 @@ maquetaRoot.scaling = new BABYLON.Vector3(
 );
 
     // ===== POSICIONAR MAQUETA SOBRE MESA =====
-const alturaMesa = 0.80;
+const alturaMesa = 0.85;
 
 // ===== PIVOTE CENTRAL FIJO DE LA MAQUETA =====
 const giroRoot = new BABYLON.TransformNode("giroRoot", scene);
@@ -243,22 +244,7 @@ xr.input.onControllerAddedObservable.add((xrController) => {
         giroRoot.rotation.y += giroJoystickX * 0.025;
     }
 
-    // Inclinación limitada
-    // Sin grip: inclinación limitada
-if (!gripPressed && Math.abs(giroJoystickY) > 0.15) {
-
-    giroRoot.rotation.x += giroJoystickY * 0.005;
-
-    const limiteInclinacion = BABYLON.Tools.ToRadians(10);
-
-    giroRoot.rotation.x = BABYLON.Scalar.Clamp(
-        giroRoot.rotation.x,
-        -limiteInclinacion,
-        limiteInclinacion
-    );
-}
-
-// Con grip: acercar / alejar
+  // Con grip: acercar / alejar
 if (gripPressed && Math.abs(giroJoystickY) > 0.15) {
 
     const velocidadZoom = 0.01;
