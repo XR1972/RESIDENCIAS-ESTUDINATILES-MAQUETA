@@ -188,6 +188,7 @@ const createScene = async function () {
         console.log("Posicion fijada");
     }
 });
+    }
                 const joystick = motionController.getComponent("xr-standard-thumbstick");
                 if (!joystick) return;
                 joystick.onAxisValueChangedObservable.add((axes) => {
