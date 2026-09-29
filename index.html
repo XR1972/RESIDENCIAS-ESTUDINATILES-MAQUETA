@@ -165,31 +165,29 @@ const createScene = async function () {
                 }
                 const trigger = motionController.getComponent("xr-standard-trigger");
                 if (trigger) {
-                    trigger.onButtonStateChangedObservable.add((component) => {
-                        if (!component.pressed) return;
-                        if (!placementLocked) {
-                            if (hitTestDisponible) {
-                                if (hitTestPose) {
-                                    giroRoot.position.copyFrom(hitTestPose);
-                                    giroRoot.setEnabled(true);
-                                    placementLocked = true;
-                                    reticulo.setEnabled(false);
-                                    console.log("Maqueta colocada sobre la superficie escaneada");
-                                } else {
-                                    console.log("Todavia no se detecta una superficie, sigue mirando hacia el escritorio");
-                                }
-                            } else {
-                                giroRoot.setEnabled(true);
-                                placementLocked = true;
-                                console.log("Posicion fijada");
-                            }
-                        } else {
-                            placementLocked = false;
-                            if (hitTestDisponible) giroRoot.setEnabled(false);
-                            console.log("Modo colocacion activado de nuevo");
-                        }
-                    });
-                }
+                 
+               trigger.onButtonStateChangedObservable.add((component) => {
+     if (!component.pressed) return;
+    // Una vez anclada, el gatillo ya no hace nada de colocacion:
+    // evita que el cliente la desancle sin querer al volver a oprimirlo.
+    // Para volver a colocarla hay que recargar la pagina (nueva mesa/sitio).
+    if (placementLocked) return;
+    if (hitTestDisponible) {
+        if (hitTestPose) {
+            giroRoot.position.copyFrom(hitTestPose);
+            giroRoot.setEnabled(true);
+            placementLocked = true;
+            reticulo.setEnabled(false);
+            console.log("Maqueta anclada sobre la superficie escaneada");
+        } else {
+            console.log("Todavia no se detecta una superficie, sigue mirando hacia el escritorio");
+        }
+    } else {
+        giroRoot.setEnabled(true);
+        placementLocked = true;
+        console.log("Posicion fijada");
+    }
+});
                 const joystick = motionController.getComponent("xr-standard-thumbstick");
                 if (!joystick) return;
                 joystick.onAxisValueChangedObservable.add((axes) => {
