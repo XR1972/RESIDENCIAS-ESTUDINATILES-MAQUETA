@@ -3,293 +3,256 @@
 <head>
     <meta charset="utf-8">
     <title>SGOC XR - MAQUETA 20 DE JULIO</title>
-
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-
     <style>
-        html, body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            overflow: hidden;
-        }
-
-        #renderCanvas {
-            width: 100%;
-            height: 100%;
-            touch-action: none;
-        }
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        #renderCanvas { width: 100%; height: 100%; touch-action: none; }
     </style>
 </head>
-
 <body>
-
 <canvas id="renderCanvas"></canvas>
-
 <script>
 const canvas = document.getElementById("renderCanvas");
-
 const engine = new BABYLON.Engine(canvas, true);
 
 const createScene = async function () {
-
     const scene = new BABYLON.Scene(engine);
     scene.collisionsEnabled = true;
     scene.gravity = new BABYLON.Vector3(0, -0.5, 0);
+    scene.clearColor = new BABYLON.Color4(0.94, 0.94, 0.94, 1); // fondo gris claro (solo fuera de AR)
 
-   // ===== CAMARA PARA MAQUETA =====
-const camera = new BABYLON.ArcRotateCamera(
-    "cameraMaqueta",
-    BABYLON.Tools.ToRadians(45),
-    BABYLON.Tools.ToRadians(65),
-    2.20,
-    new BABYLON.Vector3(0, 0.95, 0),
-    scene
-);
-
-camera.attachControl(canvas, true);
-camera.minZ = 0.01;
-
-// Limites de zoom
-camera.lowerRadiusLimit = 0.70;
-camera.upperRadiusLimit = 4.00;
-
-// Limites verticales para no voltear la camara
-camera.lowerBetaLimit = BABYLON.Tools.ToRadians(20);
-camera.upperBetaLimit = BABYLON.Tools.ToRadians(85);
-
-// Suavidad de movimiento
-camera.wheelPrecision = 50;
-camera.panningSensibility = 1000;
-
-    // Luz
-    const light = new BABYLON.HemisphericLight(
-        "light",
-        new BABYLON.Vector3(0, 1, 0),
+    // ===== CAMARA PARA MAQUETA (modo escritorio, sin gafas) =====
+    const camera = new BABYLON.ArcRotateCamera(
+        "cameraMaqueta",
+        BABYLON.Tools.ToRadians(45),
+        BABYLON.Tools.ToRadians(65),
+        2.20,
+        new BABYLON.Vector3(0, 0.95, 0),
         scene
     );
+    camera.attachControl(canvas, true);
+    camera.minZ = 0.01;
+    camera.lowerRadiusLimit = 0.70;
+    camera.upperRadiusLimit = 4.00;
+    camera.lowerBetaLimit = BABYLON.Tools.ToRadians(20);
+    camera.upperBetaLimit = BABYLON.Tools.ToRadians(85);
+    camera.wheelPrecision = 50;
+    camera.panningSensibility = 1000;
 
+    // Luz
+    const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
     light.intensity = 1.2;
     light.groundColor = new BABYLON.Color3(0.55, 0.55, 0.55);
 
     // Cargar edificio
-    const result = await BABYLON.SceneLoader.ImportMeshAsync(
-        "",
-        "./",
-        "UNITROPICO.glb",
-        scene
-    );
-
+    const result = await BABYLON.SceneLoader.ImportMeshAsync("", "./", "UNITROPICO.glb", scene);
     console.log("MODELO SGOC CARGADO", result);
-    result.meshes.forEach(mesh => {
-    mesh.checkCollisions = true;
+    result.meshes.forEach(mesh => { mesh.checkCollisions = true; });
+
+    // Encuadrar automaticamente
+    const candidatos = result.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
+    const centros = candidatos.map(m => m.getBoundingInfo().boundingBox.centerWorld);
+    const xs = centros.map(c => c.x).sort((a,b) => a-b);
+    const ys = centros.map(c => c.y).sort((a,b) => a-b);
+    const zs = centros.map(c => c.z).sort((a,b) => a-b);
+    const medio = a => a[Math.floor(a.length / 2)];
+    const centroPrincipal = new BABYLON.Vector3(medio(xs), medio(ys), medio(zs));
+    const meshes = candidatos.filter(m => {
+        const c = m.getBoundingInfo().boundingBox.centerWorld;
+        return (Math.abs(c.x - centroPrincipal.x) < 60 && Math.abs(c.y - centroPrincipal.y) < 60 && Math.abs(c.z - centroPrincipal.z) < 20);
     });
+    const bounds = BABYLON.Mesh.MinMax(meshes);
+    const center = BABYLON.Vector3.Center(bounds.min, bounds.max);
+    const size = bounds.max.subtract(bounds.min);
+    const maxSize = Math.max(size.x, size.y, size.z);
 
+    // ===== MODO MAQUETA =====
+    const tamanoMaqueta = 1.20;
+    const tamanoHorizontal = Math.max(size.x, size.z);
+    const escalaMaqueta = tamanoMaqueta / tamanoHorizontal;
+    const maquetaRoot = new BABYLON.TransformNode("maquetaRoot", scene);
+    result.meshes.filter(mesh => !mesh.parent).forEach(mesh => { mesh.parent = maquetaRoot; });
+    maquetaRoot.scaling = new BABYLON.Vector3(escalaMaqueta, escalaMaqueta, escalaMaqueta);
 
-    // Encuadrar automaticamente el modelo cargado
-const candidatos = result.meshes.filter(m =>
-    m.getTotalVertices &&
-    m.getTotalVertices() > 0
-);
+    // ===== POSICIONAR MAQUETA (posicion por defecto, modo escritorio) =====
+    const alturaMesa = 0.85;
+    const giroRoot = new BABYLON.TransformNode("giroRoot", scene);
+    giroRoot.position = new BABYLON.Vector3(0, alturaMesa, 0);
+    maquetaRoot.parent = giroRoot;
+    maquetaRoot.position = new BABYLON.Vector3(-center.x * escalaMaqueta, -bounds.min.y * escalaMaqueta, -center.z * escalaMaqueta);
+    const mesa = BABYLON.MeshBuilder.CreateBox("mesaMaqueta", { width: tamanoMaqueta, depth: tamanoMaqueta, height: 0.05 }, scene);
+    mesa.parent = giroRoot;
+    mesa.position = new BABYLON.Vector3(0, -0.025, 0);
 
-// Centro aproximado del grupo principal
-const centros = candidatos.map(m =>
-    m.getBoundingInfo().boundingBox.centerWorld
-);
-
-const xs = centros.map(c => c.x).sort((a,b) => a-b);
-const ys = centros.map(c => c.y).sort((a,b) => a-b);
-const zs = centros.map(c => c.z).sort((a,b) => a-b);
-
-const medio = a => a[Math.floor(a.length / 2)];
-
-const centroPrincipal = new BABYLON.Vector3(
-    medio(xs),
-    medio(ys),
-    medio(zs)
-);
-
-// Solo geometría cercana al edificio real
-const meshes = candidatos.filter(m => {
-    const c = m.getBoundingInfo().boundingBox.centerWorld;
-
-    return (
-        Math.abs(c.x - centroPrincipal.x) < 60 &&
-        Math.abs(c.y - centroPrincipal.y) < 60 &&
-        Math.abs(c.z - centroPrincipal.z) < 20
-    );
-});
-    
-const bounds = BABYLON.Mesh.MinMax(meshes);
-const center = BABYLON.Vector3.Center(bounds.min, bounds.max);
-const size = bounds.max.subtract(bounds.min);
-const maxSize = Math.max(size.x, size.y, size.z);
-console.log("BOUNDS MIN:", bounds.min);
-console.log("BOUNDS MAX:", bounds.max);
-console.log("CENTER:", center);
-console.log("SIZE:", size);
-console.log("MAX SIZE:", maxSize);
-  
-
-    // ===== MODO MAQUETA: reducir modelo a 80 cm =====
-const tamanoMaqueta = 1.20;
-
-// Dimensión horizontal real del proyecto
-const tamanoHorizontal = Math.max(size.x, size.z);
-
-// Escala automática
-const escalaMaqueta = tamanoMaqueta / tamanoHorizontal;
-
-const maquetaRoot = new BABYLON.TransformNode("maquetaRoot", scene);
-
-result.meshes
-    .filter(mesh => !mesh.parent)
-    .forEach(mesh => {
-        mesh.parent = maquetaRoot;
-    });
-
-maquetaRoot.scaling = new BABYLON.Vector3(
-    escalaMaqueta,
-    escalaMaqueta,
-    escalaMaqueta
-);
-
-    // ===== POSICIONAR MAQUETA SOBRE MESA =====
-const alturaMesa = 0.85;
-
-// ===== PIVOTE CENTRAL FIJO DE LA MAQUETA =====
-const giroRoot = new BABYLON.TransformNode("giroRoot", scene);
-
-// El pivote queda exactamente en el centro de la mesa
-giroRoot.position = new BABYLON.Vector3(
-    0,
-    alturaMesa,
-    0
-);
-
-// El edificio pasa a depender del pivote
-maquetaRoot.parent = giroRoot;
-
-// Posición LOCAL respecto al pivote
-maquetaRoot.position = new BABYLON.Vector3(
-    -center.x * escalaMaqueta,
-    -bounds.min.y * escalaMaqueta,
-    -center.z * escalaMaqueta
-);
-// Mesa virtual
-const mesa = BABYLON.MeshBuilder.CreateBox(
-    "mesaMaqueta",
-    {
-        width: tamanoMaqueta,
-        depth: tamanoMaqueta,
-        height: 0.05
-    },
-    scene
-);
-    
-// La mesa gira junto con toda la maqueta
-mesa.parent = giroRoot;
-
-mesa.position = new BABYLON.Vector3(
-    0,
-    -0.025,
-    0
-);
-
-console.log("CENTRO MODELO:", center);
-console.log("TAMANO MODELO:", size);
+    // ===== ANILLO DE ESCANEO (solo visible en AR mientras se busca superficie) =====
+    const reticulo = BABYLON.MeshBuilder.CreateTorus("reticulo", { diameter: 0.3, thickness: 0.015, tessellation: 32 }, scene);
+    const matReticulo = new BABYLON.StandardMaterial("matReticulo", scene);
+    matReticulo.emissiveColor = new BABYLON.Color3(0.2, 1, 0.4);
+    matReticulo.disableLighting = true;
+    reticulo.material = matReticulo;
+    reticulo.setEnabled(false);
+    reticulo.isPickable = false;
 
     // Activar WebXR
     try {
-
-const xr = await scene.createDefaultXRExperienceAsync({
-    floorMeshes: [],
-    disableTeleportation: true
-});
-        
-  // ===== GIRO XR DE LA MAQUETA SOBRE SU EJE =====
-let giroJoystickX = 0;
-let giroJoystickY = 0;
-let gripPressed = false;
-
-xr.input.onControllerAddedObservable.add((xrController) => {
-
-    if (xrController.inputSource.handedness !== "right") return;
-
-    xrController.onMotionControllerInitObservable.add((motionController) => {
-    const grip = motionController.getComponentOfType("squeeze");
-
-    if (grip) {
-        grip.onButtonStateChangedObservable.add((component) => {
-            gripPressed = component.pressed;
-    });
-}
-        
-        const joystick = motionController.getComponent("xr-standard-thumbstick");
-
-        if (!joystick) return;
-
-        joystick.onAxisValueChangedObservable.add((axes) => {
-            giroJoystickX = axes.x;
-            giroJoystickY = axes.y;
+        const xr = await scene.createDefaultXRExperienceAsync({
+            floorMeshes: [],
+            disableTeleportation: true,
+            optionalFeatures: true, // necesario para poder activar hit-test despues
+            uiOptions: {
+                sessionMode: "immersive-ar",
+                referenceSpaceType: "local-floor"
+            }
         });
-    });
-});
 
- scene.onBeforeRenderObservable.add(() => {
+        const xrCamera = xr.baseExperience.camera;
 
-    // Giro horizontal 360°
-    if (Math.abs(giroJoystickX) > 0.15) {
-        giroRoot.rotation.y += giroJoystickX * 0.025;
-    }
+        let giroJoystickX = 0;
+        let giroJoystickY = 0;
+        let gripPressed = false;
+        let placementLocked = false;   // false = buscando/escaneando, true = ya fijada
+        let hitTestPose = null;        // ultima posicion detectada por el escaneo
+        let hitTestDisponible = true;  // si el hit-test no carga, usamos el joystick de respaldo
 
-  // Con grip: acercar / alejar
-if (gripPressed && Math.abs(giroJoystickY) > 0.15) {
+        // ----- Intentar activar el escaneo automatico de superficies (hit-test) -----
+        try {
+            const xrHitTest = xr.baseExperience.featuresManager.enableFeature(BABYLON.WebXRFeatureName.HIT_TEST, "latest");
+            const hitPos = new BABYLON.Vector3();
+            const hitRot = new BABYLON.Quaternion();
+            const hitScale = new BABYLON.Vector3();
+            xrHitTest.onHitTestResultObservable.add((results) => {
+                if (placementLocked) return;
+                if (results.length > 0) {
+                    results[0].transformationMatrix.decompose(hitScale, hitRot, hitPos);
+                    reticulo.position.copyFrom(hitPos);
+                    reticulo.setEnabled(true);
+                    hitTestPose = hitPos.clone();
+                } else {
+                    reticulo.setEnabled(false);
+                    hitTestPose = null;
+                }
+            });
+        } catch (e) {
+            hitTestDisponible = false;
+            console.log("Escaneo automatico no disponible en este dispositivo, se usara el joystick para mover la maqueta", e);
+        }
 
-    const velocidadZoom = 0.01;
+        xr.baseExperience.onStateChangedObservable.add((state) => {
+            if (state === BABYLON.WebXRState.IN_XR) {
+                scene.clearColor = new BABYLON.Color4(0, 0, 0, 0); // transparente: se ve la oficina real
+                mesa.setEnabled(false);      // se usa el escritorio real, no la mesa virtual
+                placementLocked = false;
+                giroRoot.setEnabled(false);  // ocultar la maqueta hasta que se coloque
+                reticulo.setEnabled(false);
+                console.log(hitTestDisponible
+                    ? "AR activo: mira hacia el escritorio hasta ver el anillo verde y presiona el gatillo para colocar la maqueta"
+                    : "AR activo: mueve la maqueta con el joystick y presiona el gatillo para fijarla");
+            } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
+                scene.clearColor = new BABYLON.Color4(0.94, 0.94, 0.94, 1);
+                mesa.setEnabled(true);
+                giroRoot.setEnabled(true);   // visible de nuevo en modo escritorio
+                reticulo.setEnabled(false);
+            }
+        });
 
-    giroRoot.scaling.x += -giroJoystickY * velocidadZoom;
-    giroRoot.scaling.y += -giroJoystickY * velocidadZoom;
-    giroRoot.scaling.z += -giroJoystickY * velocidadZoom;
+        xr.input.onControllerAddedObservable.add((xrController) => {
+            if (xrController.inputSource.handedness !== "right") return;
+            xrController.onMotionControllerInitObservable.add((motionController) => {
+                const grip = motionController.getComponentOfType("squeeze");
+                if (grip) {
+                    grip.onButtonStateChangedObservable.add((component) => { gripPressed = component.pressed; });
+                }
+                const trigger = motionController.getComponent("xr-standard-trigger");
+                if (trigger) {
+                    trigger.onButtonStateChangedObservable.add((component) => {
+                        if (!component.pressed) return;
+                        if (!placementLocked) {
+                            if (hitTestDisponible) {
+                                if (hitTestPose) {
+                                    giroRoot.position.copyFrom(hitTestPose);
+                                    giroRoot.setEnabled(true);
+                                    placementLocked = true;
+                                    reticulo.setEnabled(false);
+                                    console.log("Maqueta colocada sobre la superficie escaneada");
+                                } else {
+                                    console.log("Todavia no se detecta una superficie, sigue mirando hacia el escritorio");
+                                }
+                            } else {
+                                giroRoot.setEnabled(true);
+                                placementLocked = true;
+                                console.log("Posicion fijada");
+                            }
+                        } else {
+                            placementLocked = false;
+                            if (hitTestDisponible) giroRoot.setEnabled(false);
+                            console.log("Modo colocacion activado de nuevo");
+                        }
+                    });
+                }
+                const joystick = motionController.getComponent("xr-standard-thumbstick");
+                if (!joystick) return;
+                joystick.onAxisValueChangedObservable.add((axes) => {
+                    giroJoystickX = axes.x;
+                    giroJoystickY = axes.y;
+                });
+            });
+        });
 
-    const escalaMin = 0.60;
-    const escalaMax = 2.50;
+        scene.onBeforeRenderObservable.add(() => {
+            if (!placementLocked) {
+                // Respaldo manual: solo se usa si el escaneo automatico no esta disponible
+                if (!hitTestDisponible) {
+                    const velocidadMover = 0.008;
+                    const forward = xrCamera.getDirection(BABYLON.Axis.Z);
+                    forward.y = 0;
+                    forward.normalize();
+                    const right = xrCamera.getDirection(BABYLON.Axis.X);
+                    right.y = 0;
+                    right.normalize();
 
-    const escalaNueva = BABYLON.Scalar.Clamp(
-        giroRoot.scaling.x,
-        escalaMin,
-        escalaMax
-    );
-
-    giroRoot.scaling.setAll(escalaNueva);
-}
-
-});
+                    if (gripPressed) {
+                        if (Math.abs(giroJoystickY) > 0.15) {
+                            giroRoot.position.y += -giroJoystickY * velocidadMover;
+                        }
+                    } else {
+                        if (Math.abs(giroJoystickX) > 0.15) {
+                            giroRoot.position.addInPlace(right.scale(giroJoystickX * velocidadMover));
+                        }
+                        if (Math.abs(giroJoystickY) > 0.15) {
+                            giroRoot.position.addInPlace(forward.scale(-giroJoystickY * velocidadMover));
+                        }
+                    }
+                }
+            } else {
+                // ===== MODO FIJO: girar y hacer zoom, igual que antes =====
+                if (Math.abs(giroJoystickX) > 0.15) {
+                    giroRoot.rotation.y += giroJoystickX * 0.025;
+                }
+                if (gripPressed && Math.abs(giroJoystickY) > 0.15) {
+                    const velocidadZoom = 0.01;
+                    giroRoot.scaling.x += -giroJoystickY * velocidadZoom;
+                    giroRoot.scaling.y += -giroJoystickY * velocidadZoom;
+                    giroRoot.scaling.z += -giroJoystickY * velocidadZoom;
+                    const escalaMin = 0.60;
+                    const escalaMax = 2.50;
+                    const escalaNueva = BABYLON.Scalar.Clamp(giroRoot.scaling.x, escalaMin, escalaMax);
+                    giroRoot.scaling.setAll(escalaNueva);
+                }
+            }
+        });
         console.log("SGOC XR ACTIVO");
-
     } catch (error) {
-
         console.log("WebXR no disponible en este dispositivo", error);
-
     }
-
     return scene;
 };
 
 createScene().then(scene => {
-
-    engine.runRenderLoop(function () {
-        scene.render();
-    });
-
+    engine.runRenderLoop(function () { scene.render(); });
 });
 
-window.addEventListener("resize", function () {
-    engine.resize();
-});
+window.addEventListener("resize", function () { engine.resize(); });
 </script>
-
 </body>
 </html>
-<!D
