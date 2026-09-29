@@ -49,6 +49,24 @@ const createScene = async function () {
     const result = await BABYLON.SceneLoader.ImportMeshAsync("", "./", "UNITROPICO.glb", scene);
     console.log("MODELO SGOC CARGADO", result);
     result.meshes.forEach(mesh => { mesh.checkCollisions = true; });
+    
+        // ===== NITIDEZ: antialiasing + filtrado anisotropico (quita el "ruido"/vibracion en las fachadas) =====
+    const pipeline = new BABYLON.DefaultRenderingPipeline("mejoraVisual", true, scene, [camera]);
+    pipeline.samples = 4;        // MSAA: suaviza bordes y el "ruido"/lineas en texturas repetitivas
+    pipeline.fxaaEnabled = true; // suavizado adicional
+
+    result.meshes.forEach(mesh => {
+        if (!mesh.material) return;
+        const materiales = mesh.material.subMaterials || [mesh.material];
+        materiales.forEach(mat => {
+            if (!mat) return;
+            if (mat.diffuseTexture) mat.diffuseTexture.anisotropicFilteringLevel = 8;
+            if (mat.albedoTexture) mat.albedoTexture.anisotropicFilteringLevel = 8;
+        });
+    });
+
+
+    
 
     // Encuadrar automaticamente
     const candidatos = result.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
@@ -107,6 +125,7 @@ const createScene = async function () {
         });
 
         const xrCamera = xr.baseExperience.camera;
+        pipeline.cameras.push(xrCamera); // aplicar la misma mejora de nitidez tambien en modo AR/gafas
 
         let giroJoystickX = 0;
         let giroJoystickY = 0;
